@@ -218,7 +218,7 @@ def patch_flavour(flavourname, savedconfig, arch):
 
 
 def usage():
-    print("%s [<flavourname>] [options]" % os.path.basename(sys.argv[0]))
+    print("%s [options]" % os.path.basename(sys.argv[0]))
     print("    options:")
     print("      -h, --help:")
     print("        show this help file")
@@ -274,7 +274,7 @@ def main():
     print("you can now e.g. commit the changes:")
     print("")
     print("  git all .")
-    print("  git commit -a -m \"%s modifications\" % flavourname")
+    print("  git commit -a -m \"%s modifications\"" % flavourname)
     print("")
     print("then build them:")
     print("")
