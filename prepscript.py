@@ -29,6 +29,64 @@ def usage():
     print("           configure build in sourcetree, for projects that do not support out-of-source tree builds")
 
 
+
+class RepoPrep:
+    def __init__(self, projectname, repopath, buildpath, prefixpath):
+        self.projectname = projectname # just a fancy name
+        self.repopath    = repopath    # where to find the repository for configuring
+        self.buildpath   = buildpath   # where to build (can be same as repopath)
+        self.prefixpath  = prefixpath  # root prefix where to put the result
+
+    def prepare(self):
+        '''
+            requires either a "bootstrap" or "autoconf.sh" script
+        '''
+          
+        # bootstrap
+        conffile = os.path.abspath(os.path.join(self.repopath, 'configure'))
+        if not os.path.exists(conffile):
+            bootstrapnames = [ "bootstrap", "autogen.sh" ]
+            bootstrapfile = None
+            for name in bootstrapnames:
+                chkpath = os.path.abspath(os.path.join(self.repopath, name))
+                if os.path.exists(chkpath):
+                    bootstrapfile = chkpath
+                    break
+   
+            print "Info: %s needs bootstrap" % self.projectname
+            if not bootstrapfile:
+                print("Error: no '%s' configure file found but no bootstrap file (%s) either" % (conffile, ', '.join(bootstrapnames)))
+                return 1
+    
+            # silly trick to keep configure from running through autogen.sh since we prefer out-of-source builds
+            bootstrapenvs = "AUTOGEN_CONFIGURE_ARGS=\"--version\""
+
+            cmdline = "export %s && cd %s && %s" % (bootstrapenvs, self.repopath, bootstrapfile)
+            print cmdline
+            retval = os.system(cmdline)
+            if retval != 0:
+                print("Error: bootstrapping %s returned status %d" % (self.projectname, retval))
+                return 1
+        else:
+            print("Info: %s is already bootstrapped" % self.projectname)
+    
+        # configure
+        print("Info: configuring %s" % self.projectname)
+        
+        # set path environment variable for configure (they get saved in config.status for reruns)
+        envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (self.prefixpath, self.prefixpath)
+        configureoptions = get_options(self.projectname)
+       
+        cmdline = "cd %s && %s --prefix=%s %s %s" % (self.buildpath, conffile, self.prefixpath, configureoptions, envs)
+        print cmdline
+        retval = os.system(cmdline)
+        if retval != 0:
+            print("Error: configuring %s returned status %d" % (self.projectname, retval))
+            return 1
+        print("Info: finished setting up %s, cd to %s for building\n" % (self.projectname, self.buildpath))
+
+
+
 def main():
     if len(sys.argv) < 2:
         usage()
@@ -40,7 +98,8 @@ def main():
         print("Error parsing options: '%s'" % str(exc))
         return 1
     
-    buildinsource = False
+    buildinsource = False   # defaults
+
     for opt in opts:
         if opt[0] == "-s" or opt[0] == "--sourcetreebuild":
             buildinsource = True
@@ -69,45 +128,22 @@ def main():
             print("Error: no source directory for project '%s' found (expected at '%s')" % (proj, os.path.abspath(gitname)))
             return 1
     
-        # layout
+        # create temporary directories
         for p in generated:
             if not os.path.exists(p):
                 os.mkdir(p)
-    
-        # bootstrap
-        conffile = os.path.abspath(os.path.join(gitname, 'configure'))
-        if not os.path.exists(conffile):
-            bootstrapfile = os.path.abspath(os.path.join(gitname, 'bootstrap'))
-    
-            print "Info: %s needs bootstrap" % proj
-            if not os.path.exists(bootstrapfile):
-                print("Error: no '%s' configure file found but no '%s' bootstrap file either" % (conffile, bootstrapfile))
-                return 1
-    
-            cmdline = "cd %s && ./bootstrap" % (gitname)
-            retval = os.system(cmdline)
-            if retval != 0:
-                print("Error: bootstrapping %s returned status %d" % (proj, retval))
-                return 1
-        else:
-            print("Info: %s is already bootstrapped" % proj)
-    
-        # configure
-        print("Info: configuring %s" % proj)
         
-        envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (prefix, prefix)
-        configureoptions = get_options(proj)
-        
-        cmdline = "cd %s && %s --prefix=%s %s %s" % (buildname, conffile, prefix, configureoptions, envs)
-        retval = os.system(cmdline)
-        if retval != 0:
-            print("Error: configuring %s returned status %d" % (proj, retval))
-            return 1
-        print("Info: finished setting up %s, cd to %s for building\n" % (proj, buildname))
+        repo = RepoPrep(proj, gitname, buildname, prefix)
+        res = repo.prepare()
+        if res != 0: # some error occurred (already reported by the class)
+            return res
     return 0
 
 
 def get_options(project):
+    '''
+        get options for configure (stored in <project>.conf)
+    '''
     fname = "%s.conf" % (project)
     result = []
     if os.path.exists(fname):
@@ -115,7 +151,7 @@ def get_options(project):
             with open(fname, "r") as fh:
                 lines = fh.readlines()
                 for l in lines:
-                    if not l.strip().startswith('#'):
+                    if not l.strip().startswith('#'): # filter out comments
                         result.append(l.strip())
         except Exception, exc:
             print("Error: opening configure options file '%s' : '%s'" % (fname, str(exc)))
