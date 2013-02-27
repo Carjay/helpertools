@@ -100,7 +100,7 @@ def generate_flavour(flavourname, arch):
         return
 
     print("updating configs")
-    output, err = pexec(['fakeroot', 'debian/rules', 'clean'], True)
+    output, err = pexec(['fakeroot', 'debian/rules', 'updateconfigs'], True)
     if err:
         print("Error updating configs")
         return
