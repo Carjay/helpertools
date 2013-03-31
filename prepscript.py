@@ -27,15 +27,19 @@ def usage():
     print("       Options:")
     print("         -s,--sourcetreebuild")
     print("           configure build in sourcetree, for projects that do not support out-of-source tree builds")
+    print("")
+    print("         --no-configureenvs")
+    print("           do not add variables to configure for projects that feature non-autoconf based configure scripts")
 
 
 
 class RepoPrep:
-    def __init__(self, projectname, repopath, buildpath, prefixpath):
+    def __init__(self, projectname, repopath, buildpath, prefixpath, addconfigureenvs):
         self.projectname = projectname # just a fancy name
         self.repopath    = repopath    # where to find the repository for configuring
         self.buildpath   = buildpath   # where to build (can be same as repopath)
         self.prefixpath  = prefixpath  # root prefix where to put the result
+        self.addconfenv  = addconfigureenvs # if True, add configure environment variables for prefix
 
     def prepare(self):
         '''
@@ -74,7 +78,9 @@ class RepoPrep:
         print("Info: configuring %s" % self.projectname)
         
         # set path environment variable for configure (they get saved in config.status for reruns)
-        envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (self.prefixpath, self.prefixpath)
+	envs = ""
+	if self.addconfenv:
+	    envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (self.prefixpath, self.prefixpath)
         configureoptions = get_options(self.projectname)
        
         cmdline = "cd %s && %s --prefix=%s %s %s" % (self.buildpath, conffile, self.prefixpath, configureoptions, envs)
@@ -93,16 +99,19 @@ def main():
         return 1
 
     try:
-        opts, args = gnu_getopt(sys.argv[1:], "sh", ["sourcetreebuild", "help"])
+        opts, args = gnu_getopt(sys.argv[1:], "sh", ["sourcetreebuild", "no-configureenvs", "help"])
     except GetoptError, exc:
         print("Error parsing options: '%s'" % str(exc))
         return 1
     
     buildinsource = False   # defaults
+    addconfigureenvs = True
 
     for opt in opts:
         if opt[0] == "-s" or opt[0] == "--sourcetreebuild":
             buildinsource = True
+        elif opt[0] == '--no-configureenvs':
+    	    addconfigureenvs = False
         elif opt[0] == "-h" or opt[0] == "--help":
             usage()
             return 1
@@ -133,7 +142,7 @@ def main():
             if not os.path.exists(p):
                 os.mkdir(p)
         
-        repo = RepoPrep(proj, gitname, buildname, prefix)
+        repo = RepoPrep(proj, gitname, buildname, prefix, addconfigureenvs)
         res = repo.prepare()
         if res != 0: # some error occurred (already reported by the class)
             return res
