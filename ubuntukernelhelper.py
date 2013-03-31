@@ -53,8 +53,8 @@ def pexec(args, showoutput = False):
     return res.strip(), p.returncode
 
 
-def get_arch():
-    mcfgdir = os.path.join(os.getcwd(), "debian.master", "config")
+def get_arch(debiandir):
+    mcfgdir = os.path.join(os.getcwd(), debiandir, "config")
     configs = []
     for x in os.listdir(mcfgdir):
         if os.path.isdir(os.path.join(mcfgdir,x)):
@@ -72,38 +72,50 @@ def get_arch():
     except ValueError:
         print("invalid selection")
         return None
-    
+    sys.stdout.write("\n")
     return arch
 
 
-def generate_flavour(flavourname, arch):
+def generate_flavour(flavourname, arch, debiandir):
     currentkernel, err = pexec(['uname', '-r'])
     if err:
         print("Error reading current kernel with 'uname -r' : '%s'" % currentkernel)
-        return
-    
-   
-    srcconfig = "/boot/config-%s" % (currentkernel)
+        return None
+
+    mcfgdir = os.path.join(os.getcwd(), debiandir, "config")
+
+    # sanity check
+    srcconfig = os.path.join(mcfgdir, arch, "config.flavour.generic")
     if not os.path.exists(srcconfig):
-        print("Error: unable to locate source kernel config '%s' for currently running kernel" % srcconfig)
-        return
-      
-    mcfgdir = os.path.join(os.getcwd(), "debian.master", "config")
+        print("Error, expected generic kernel config at '%s' but it does not exist" % srcconfig)
+        return None
+
+    # offer choice of using the currently running config (may fail if kernel versions are too distant)
+    currentconfig = "/boot/config-%s" % (currentkernel)
+    if os.path.exists(currentconfig):
+        sys.stdout.write('Do you want to use the kernel config of the currently running kernel "%s" (y/N)? ' % currentkernel)
+        sys.stdout.flush()
+        answer = sys.stdin.readline().strip().lower()
+        if answer == 'y':
+            srcconfig = currentconfig
+                
+    
     destconfig = os.path.join(mcfgdir, arch, "config.flavour.%s" % flavourname)
-    print("using %s kernel config to create new flavour %s" % (currentkernel, flavourname))
+    print("using '%s' kernel config to create new flavour %s" % (srcconfig, flavourname))
+    
     shutil.copy2(srcconfig, destconfig)
     
     print("cleaning kernel dir")
     output, err = pexec(['fakeroot', 'debian/rules', 'clean'], True)
     if err:
         print("Error cleaning config")
-        return
+        return None
 
     print("updating configs")
     output, err = pexec(['fakeroot', 'debian/rules', 'updateconfigs'], True)
     if err:
         print("Error updating configs")
-        return
+        return None
 
     # here we'd usually want to edit the config which is a bit tricky
     # to do from a script, probably better to split this here somehow
@@ -118,7 +130,7 @@ def generate_flavour(flavourname, arch):
     return cfg
 
 
-def patch_flavour(flavourname, savedconfig, arch):
+def patch_flavour(flavourname, savedconfig, arch, debiandir):
     # we need to reset the dir so build works
     # this means we have to save the generated config
 
@@ -142,7 +154,7 @@ def patch_flavour(flavourname, savedconfig, arch):
     
 
     print("copying back kernel config")
-    mcfgdir = os.path.join(os.getcwd(), "debian.master", "config")
+    mcfgdir = os.path.join(os.getcwd(), debiandir, "config")
     kernelconfig = os.path.join(mcfgdir, arch, "config.flavour.%s" % flavourname)
     try:
         with open(kernelconfig,'wt+') as configh:
@@ -152,7 +164,7 @@ def patch_flavour(flavourname, savedconfig, arch):
         return
     
     print("getting last abi")
-    abidir = os.path.join(os.getcwd(), "debian.master", "abi")
+    abidir = os.path.join(os.getcwd(), debiandir, "abi")
     abientries = os.listdir(abidir)
     abis = []
     for e in abientries:
@@ -182,9 +194,9 @@ def patch_flavour(flavourname, savedconfig, arch):
     shutil.copy2(genericmodabi, os.path.join(currentabidir, "%s.modules" % flavourname))
     
     # we need to make the build system aware or our flavours
-    getabifile = os.path.join(os.getcwd(), "debian.master", "etc", "getabis")
-    rulesfile = os.path.join(os.getcwd(), "debian.master", "rules.d", "%s.mk" % arch)
-    varssrcfile = os.path.join(os.getcwd(), "debian.master", "control.d", "vars.generic")
+    getabifile = os.path.join(os.getcwd(), debiandir, "etc", "getabis")
+    rulesfile = os.path.join(os.getcwd(), debiandir, "rules.d", "%s.mk" % arch)
+    varssrcfile = os.path.join(os.getcwd(), debiandir, "control.d", "vars.generic")
 
     for filename, searchpattern in ( (getabifile, r'''getall\s+%s''' % arch), (rulesfile, r'''flavours.*''') ):
         try:
@@ -204,7 +216,7 @@ def patch_flavour(flavourname, savedconfig, arch):
             return
         shutil.move(filename + '.repl', filename)
 
-    varsdestfile = os.path.join(os.getcwd(), "debian.master", "control.d", "vars.%s" % flavourname)
+    varsdestfile = os.path.join(os.getcwd(), debiandir, "control.d", "vars.%s" % flavourname)
     if not os.path.exists(varssrcfile):
         print("Error: file '%s' does not exist" % varssrcfile)
         return
@@ -260,15 +272,37 @@ def main():
     if codename not in [ "precise" ]:
         print("Warning, untested combination")
 
-    if "debian.master" not in os.listdir('.'):
+
+    if "debian" not in os.listdir('.'):
         print("Error: script must be run in top ubuntu linux tree git directory")
         return
+
+    debiandir = None
+
+    # this depends on what is set up in debian.env
+    try:
+        with open(os.path.join(os.getcwd(),"debian","debian.env"),'rt') as envfh:
+            envvar = envfh.readlines()
+            for l in envvar:
+                m = re.match("DEBIAN\s*=\s*(.+)", l)
+                if m:
+                    debiandir, = m.groups()
+                    break
+    except Exception,exc:
+        print("Error opening debian environment setup:\n'%s'" % str(exc))
+        return
     
-    arch = get_arch()
+    if debiandir == None:
+        print("Error getting debian branch directory from debian/debian.env")
+        return
+    
+    arch = get_arch(debiandir)
     if arch:
-        config = generate_flavour(flavourname, arch)
+        config = generate_flavour(flavourname, arch, debiandir)
         if config:
-            patch_flavour(flavourname, config, arch)
+            patch_flavour(flavourname, config, arch, debiandir)
+        else:
+            return
 
     print("all patching done")
     print("you can now e.g. commit the changes:")
