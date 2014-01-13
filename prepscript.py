@@ -78,18 +78,18 @@ class RepoPrep:
         print("Info: configuring %s" % self.projectname)
         
         # set path environment variable for configure (they get saved in config.status for reruns)
-	envs = ""
-	if self.addconfenv:
-	    envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (self.prefixpath, self.prefixpath)
-        configureoptions = get_options(self.projectname)
-       
-        cmdline = "cd %s && %s --prefix=%s %s %s" % (self.buildpath, conffile, self.prefixpath, configureoptions, envs)
-        print cmdline
-        retval = os.system(cmdline)
-        if retval != 0:
-            print("Error: configuring %s returned status %d" % (self.projectname, retval))
-            return 1
-        print("Info: finished setting up %s, cd to %s for building\n" % (self.projectname, self.buildpath))
+        envs = ""
+        if self.addconfenv:
+            envs = "LD_LIBRARY_PATH=%s/lib PKG_CONFIG_PATH=%s/lib/pkgconfig" % (self.prefixpath, self.prefixpath)
+            configureoptions = get_options(self.projectname)
+           
+            cmdline = "cd %s && %s --prefix=%s %s %s" % (self.buildpath, conffile, self.prefixpath, configureoptions, envs)
+            print cmdline
+            retval = os.system(cmdline)
+            if retval != 0:
+                print("Error: configuring %s returned status %d" % (self.projectname, retval))
+                return 1
+            print("Info: finished setting up %s, cd to %s for building\n" % (self.projectname, self.buildpath))
 
 
 
@@ -111,7 +111,7 @@ def main():
         if opt[0] == "-s" or opt[0] == "--sourcetreebuild":
             buildinsource = True
         elif opt[0] == '--no-configureenvs':
-    	    addconfigureenvs = False
+            addconfigureenvs = False
         elif opt[0] == "-h" or opt[0] == "--help":
             usage()
             return 1
