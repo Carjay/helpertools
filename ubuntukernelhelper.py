@@ -307,7 +307,7 @@ def main():
     print("all patching done")
     print("you can now e.g. commit the changes:")
     print("")
-    print("  git all .")
+    print("  git add .")
     print("  git commit -a -m \"%s modifications\"" % flavourname)
     print("")
     print("then build them:")
