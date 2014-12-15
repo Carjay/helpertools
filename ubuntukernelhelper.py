@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# Copyright (C) 2011, Carsten Juttner <carjay@gmx.net>
+# Copyright (C) 2011-14, Carsten Juttner <carjay@gmx.net>
 #
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,6 +23,10 @@
 
 # Simple script automating the cool method described in
 # http://blog.avirtualhome.com
+#
+# Also added a possibility to generate one's own local version so the "real"
+# kernel package does not overwrite our own (one can "hold" the packages but
+# we might want to still get notified when a new - higher - version goes "live")
 #
 
 
@@ -51,6 +55,37 @@ def pexec(args, showoutput = False):
         sys.stdout.flush()
     res += buf
     return res.strip(), p.returncode
+
+
+def check_local(localname, debiandir):
+    # if a localname is set we assume that we do want a local version
+    if localname == None:
+        sys.stdout.write("Do you want to make this a local .DEB so the version is higher than the distribution one ")
+        sys.stdout.write("(else it will just have a different flavourname)?.\n")
+        sys.stdout.write("(y/N)?")
+        sys.stdout.flush()
+        answer = sys.stdin.readline().strip().lower()
+        if answer == 'y':
+            sys.stdout.write("Enter a name you want to use for the local version (will get appended to the official version)\n")
+            sys.stdout.flush()
+            localname = sys.stdin.readline().strip()
+        else:
+            return True # no local version requested
+    
+    msg = "Local version of the Ubuntu Kernel Package"
+    changelogpath = os.path.join(debiandir, "changelog")
+    if not os.path.exists(changelogpath):
+        # although not generating a local version would not mean we cannot build a kernel at all,
+        # this occurring indicates something unusual happened so we better investigate and
+        # return false here
+        print("Error: changelog not found at %s, something is wrong" % changelogpath)
+        return False
+    output, err = pexec(['dch', '-l', localname, '-c', changelogpath, msg])
+    if err != 0:
+        print("An error occurred trying to update the changelog using dch:")
+        sys.stdout.write(output)
+        return False
+    return True
 
 
 def get_arch(debiandir):
@@ -130,7 +165,7 @@ def generate_flavour(flavourname, arch, debiandir):
     return cfg
 
 
-def patch_flavour(flavourname, savedconfig, arch, debiandir):
+def patch_flavour(flavourname, savedconfig, arch, debiandir, localname):
     # we need to reset the dir so build works
     # this means we have to save the generated config
 
@@ -152,6 +187,8 @@ def patch_flavour(flavourname, savedconfig, arch, debiandir):
         print("Error git-cleaning")
         return
     
+    if not check_local(localname, debiandir):
+        return
 
     print("copying back kernel config")
     mcfgdir = os.path.join(os.getcwd(), debiandir, "config")
@@ -235,19 +272,24 @@ def usage():
     print("      -h, --help:")
     print("        show this help file")
     print("      -f, --flavour:")
-    print("        set flavourname to use")
+    print("        set flavourname to use (default is the current logged in user)")
+    print("      -l, --local:")
+    print("        set (dch) local name to use (else this is asked interactively)")
     
 
 def main():
     flavourname = pwd.getpwuid(os.getuid())[0].lower().strip()
+    localname   = None
     try:
-        opts, args = gnu_getopt(sys.argv[1:], 'hf:', ['help', 'flavour='])
+        opts, args = gnu_getopt(sys.argv[1:], 'hf:l:', ['help', 'flavour=', 'local='])
         for opt, param in opts:
             if opt == '-h' or opt == '--help':
                 usage()
                 return
             elif opt == '-f' or opt == '--flavour':
                 flavourname = param
+            elif opt == '-l' or opt == '--local':
+                localname = param
             else:
                 print("Error: unexpected option in command line: '%s" % opt)
                 return
@@ -269,7 +311,7 @@ def main():
         print("Error getting current distribution from lsb_release:\n'%s'" % buf.strip())
         return
        
-    if codename not in [ "precise" ]:
+    if codename not in [ "precise", "trusty" ]:
         print("Warning, untested combination")
 
 
@@ -300,7 +342,7 @@ def main():
     if arch:
         config = generate_flavour(flavourname, arch, debiandir)
         if config:
-            patch_flavour(flavourname, config, arch, debiandir)
+            patch_flavour(flavourname, config, arch, debiandir, localname)
         else:
             return
 
