@@ -59,18 +59,21 @@ class RepoPrep:
    
             print "Info: %s needs bootstrap" % self.projectname
             if not bootstrapfile:
-                print("Error: no '%s' configure file found but no bootstrap file (%s) either" % (conffile, ', '.join(bootstrapnames)))
-                return 1
+                print("Info: no '%s' configure file found but no bootstrap file (%s) either, trying to call autoconfig directly" % (conffile, ', '.join(bootstrapnames)))
+                retval = os.system("cd %s && autoreconf -fis" % self.repopath)
+                if retval != 0:
+                    print("Error: autoreconf returned status %d" % retval)
+                    return 1
+            else:
+                # silly trick to keep configure from running through autogen.sh since we prefer out-of-source builds
+                bootstrapenvs = "AUTOGEN_CONFIGURE_ARGS=\"--version\""
     
-            # silly trick to keep configure from running through autogen.sh since we prefer out-of-source builds
-            bootstrapenvs = "AUTOGEN_CONFIGURE_ARGS=\"--version\""
-
-            cmdline = "export %s && cd %s && %s" % (bootstrapenvs, self.repopath, bootstrapfile)
-            print cmdline
-            retval = os.system(cmdline)
-            if retval != 0:
-                print("Error: bootstrapping %s returned status %d" % (self.projectname, retval))
-                return 1
+                cmdline = "export %s && cd %s && %s noconfig" % (bootstrapenvs, self.repopath, bootstrapfile)
+                print cmdline
+                retval = os.system(cmdline)
+                if retval != 0:
+                    print("Error: bootstrapping %s returned status %d" % (self.projectname, retval))
+                    return 1
         else:
             print("Info: %s is already bootstrapped" % self.projectname)
     
